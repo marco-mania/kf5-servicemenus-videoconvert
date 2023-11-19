@@ -50,8 +50,8 @@ Exec=videoconvert-kdialog convert webm_vp8 %F
 Icon=video-webm
 Terminal=false
 Type=Application
-Name=Convert to WebM (VP8/Opus)
-Name[de]=In WebM (VP8/Opus) umwandeln
+Name=Convert to WebM (VP8/Vorbis)
+Name[de]=In WebM (VP8/Vorbis) umwandeln
 
 [Desktop Action convert_webm_vp9]
 Exec=videoconvert-kdialog convert webm_vp9 %F
