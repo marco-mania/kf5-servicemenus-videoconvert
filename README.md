@@ -11,6 +11,7 @@ will be used.
 
 * [KDE](https://www.kde.org/)
 * [FFmpeg](https://www.ffmpeg.org/)
+* [BC](https://www.gnu.org/software/bc/)
 
 ## Installation (Plasma 5)
 
