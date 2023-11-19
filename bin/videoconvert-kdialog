@@ -1,0 +1,460 @@
+#!/bin/bash
+#
+#  Part of kf5-servicemenus-videoconvert
+#  Copyright (c) 2021-2023 by Marco Nelles <dev at maniatek dot de>
+#
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+
+readonly PROGNAME=$(basename $0)
+
+function help() {
+
+    echo "Convert video files to common MP4/WebM files.
+
+Usage: ${PROGNAME} \$command --
+
+Commands:
+    help, -h, --help
+        Show this help text
+
+    convert <\$profile|custom>
+        Convert video files. Audio files will be reencoded to 2 channels with
+        multichannel downmix to Pro Logic II.
+
+        If available, hardware encoding support with VAAPI will be used.
+
+        Available profiles:
+
+        - \"mp4_h264\"
+        - \"Mp4_h265\"
+        - \"webm_vp8\"
+        - \"webm_vp9\"
+        - \"webm_av1_fast\"
+        - \"webm_av1_slow\"
+
+Examples:
+    ${PROGNAME} convert webm_av1_fast /path/to/myvideofile.mp4
+    ${PROGNAME} convert mp4_h264 /path/to/myvideofile1.mp4 /path/to/myvideofile2.mp4
+    ${PROGNAME} convert custom /path/to/myvideofile1.mp4 /path/to/myvideofile2.mp4
+"
+
+}
+
+## language
+
+function load_lang() {
+
+    case $1 in
+        en_US | *)
+
+            msg_common_dependency_check_failed_title="Dependency check failed"
+            msg_common_kdialog_not_found_text="kdialog not found. Assuming KDE environment."
+            msg_common_ffmpeg_not_found_text="FFmpeg not found."
+            msg_common_bc_not_found_text="BC not found."
+
+            msg_common_abort="Operation interrupted by user."
+            msg_common_progress_text="Processing file \$i of \$file_count \(\$basename_file\)"
+            msg_common_start="Starting."
+            msg_common_finish_ok="Done."
+            msg_common_finish_error="An error has occurred."
+            msg_common_file_not_found="File \$basename_file not found."
+            msg_common_command_not_found_text="The requested command \$command is not implemented."
+
+            msg_convert_title="Conversion of video files"
+            msg_convert_profile_input_text="Choose the profile you want:"
+            mgs_convert_select_audio_stream_title="Select audio stream"
+            msg_convert_select_audio_stream_text="Found multiple audio streams. Please choose one:"
+            msg_convert_init_process="Initializing encoding process..."
+            msg_convert_processing="Processing frame \$processed_frames / \$video_frame_count\<br\>Speed: \$process_fps fps\<br\>Current bitrate: \$current_bitrate\<br\>Remaining time: \$process_remaining_time"
+            msg_convert_finish_title="Conversion of \$basename_file"
+            msg_convert_error_audio_channel_count="Unusual channel count found for main audio track: \$audio_channel_count"
+
+            ;;
+    esac
+
+}
+
+load_lang ${LANGUAGE%%:*}
+
+## check dependencies
+
+kdialog_bin=$(which kdialog)
+if [ -z "${kdialog_bin}" ]; then
+    echo "${msg_common_kdialog_not_found_text}"
+    exit 1
+fi
+
+ffmpeg_bin=$(which ffmpeg)
+if [ -z "${ffmpeg_bin}" ]; then
+    "${kdialog_bin}" --icon configure --title "${msg_common_dependency_check_failed_title}" --error "${msg_common_ffmpeg_not_found_text}"
+    exit 2
+fi
+
+ffprobe_bin=$(which ffprobe)
+if [ -z "${ffprobe_bin}" ]; then
+    "${kdialog_bin}" --icon configure --title "${msg_common_dependency_check_failed_title}" --error "${msg_common_ffmpeg_not_found_text}"
+    exit 2
+fi
+
+bc_bin=$(which bc)
+if [ -z "${bc_bin}" ]; then
+    "${kdialog_bin}" --icon configure --title "${msg_common_dependency_check_failed_title}" --error "${msg_common_bc_not_found_text}"
+    exit 2
+fi
+
+# optionally for checking hardware encoding support
+vainfo_bin=$(which vainfo)
+
+vaapi_support() {
+
+    if [ -z "$vainfo_bin" ]; then
+        return 1
+    fi
+
+    LINE=""
+    case "$1" in
+    "h264")
+        LINE=$(vainfo | grep VAProfileH264High | grep "VAEntrypointEncSlice\$")
+        ;;
+    "h265")
+        LINE=$(vainfo | grep VAProfileHEVCMain | grep "VAEntrypointEncSlice\$")
+        ;;
+    "vp8")
+        LINE=$(vainfo | grep VAProfileVP8 | grep "VAEntrypointEncSlice\$")
+        ;;
+    "vp9")
+        LINE=$(vainfo | grep VAProfileVP9 | grep "VAEntrypointEncSlice\$")
+        ;;
+    esac
+
+    if [ ! -z "$LINE" ]; then
+        return 0
+    fi
+
+    return 1
+
+}
+
+seconds_to_hms() {
+
+  local seconds="$1"
+  local hours=$((seconds / 3600))
+  local minutes=$(( (seconds % 3600) / 60 ))
+  local seconds=$((seconds % 60))
+
+  printf "%02d:%02d:%02d\n" "$hours" "$minutes" "$seconds"
+
+}
+
+## exec functions
+
+exec_convert () {
+
+    local inputfile="$1"
+    local inputfile_basename="$(basename "${inputfile%.*}")"
+
+    local video_duration_sec=$(${ffprobe_bin} -i "$1" -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1)
+    local video_fps_rate=$(${ffprobe_bin} -i "$inputfile" -v error -show_entries stream=r_frame_rate -of default=nw=1:nk=1 | head -n 1)
+    local video_fps=$(echo "scale=3; x=$video_fps_rate +.005; scale=2; x/1" | ${bc_bin} -l)
+    local video_frame_count=$( echo "(($video_fps * $video_duration_sec)+0.5)/1" | ${bc_bin} )
+    local keyframe_intervall=$( echo "(($video_fps * 5)+0.5)/1" | ${bc_bin} )
+
+    local video_resolution=$(${ffprobe_bin} -i "$inputfile" -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0)
+    local video_width=$(echo $video_resolution | cut -d"," -f1)
+    local video_height=$(echo $video_resolution | cut -d"," -f2)
+    local video_longer_side=$(( $video_width > $video_height ? $video_width : $video_height ))
+
+    local video_stream_map_line="-map 0:v:0"
+
+    mapfile -t audio_streams_info < <( ${ffprobe_bin} -i "$inputfile" -v error -select_streams a -show_entries stream=index,channels:stream_tags=title,language -of csv=p=0 )
+    local audio_stream_map_line="-map 0:a:0"
+    local audio_streams_count="${#audio_streams_info[*]}"
+    if [ $audio_streams_count -gt 1 ]; then # do we have multiple audio streams?
+
+        local kdialog_string=""
+        local i=0
+        local j=1
+        for s in "${audio_streams_info[@]}"; do
+            kdialog_string="$kdialog_string $i \"Stream $j, Language: $(echo $s | cut -d',' -f3), Channels: $(echo $s | cut -d',' -f2), $(echo $s | cut -d',' -f4)\""
+            if [ $i -eq 0 ]; then
+                kdialog_string="$kdialog_string on"
+            else
+                kdialog_string="$kdialog_string off"
+            fi
+            (( i++ ))
+            (( j++ ))
+        done
+
+        audio_selected_stream_index=$(eval "${kdialog_bin}" --title \"${mgs_convert_select_audio_stream_title}\" --radiolist \"${msg_convert_select_audio_stream_text}\" $kdialog_string) || \
+            { "${kdialog_bin}" --title "${msg_title}" --passivepopup "${msg_common_abort}" 5 && exit 2; }
+        audio_stream_map_line="-map 0:a:$audio_selected_stream_index"
+    else
+        audio_selected_stream_index=1
+    fi
+
+    local audio_channel_count=$(echo "$audio_streams_info[$audio_selected_stream_index]" | cut -d',' -f2)
+
+    local format="mp4"
+    local audio_enc_line="-c:a aac -b:a 192k -ac 2"
+    local video_enc_line=""
+
+    case "$profile" in
+    "mp4_h264")
+        if vaapi_support "h264"; then
+            video_enc_line="-vaapi_device /dev/dri/renderD128 -vf \"format=nv12,hwupload\" -c:v h264_vaapi -profile 100 -qp 23"
+        else
+            video_enc_line="-c:v libx264 -crf 23 -preset slow -profile:v high"
+        fi
+        ;;
+    "mp4_h265")
+        if vaapi_support "h265"; then
+            video_enc_line="-vaapi_device /dev/dri/renderD128 -vf \"format=nv12,hwupload\" -c:v hevc_vaapi -qp 27"
+        else
+            video_enc_line="-c:v libx265 -crf 27 -preset slow"
+        fi
+        ;;
+    "webm_vp8")
+        format="webm"
+        audio_enc_line="-c:a libvorbis -b:a 192k -ac 2"
+        local bitrate="500k"
+        if [ $video_longer_side -gt 1920 ]; then
+            bitrate="8M"
+        elif [ $video_longer_side -gt 1280 ]; then
+            bitrate="5M"
+        elif [ $video_longer_side -gt 768 ]; then
+            bitrate="2M"
+        elif [ $video_longer_side -gt 352 ]; then
+            bitrate="1M"
+        fi
+        if vaapi_support "vp8"; then
+            video_enc_line="-vaapi_device /dev/dri/renderD128 -vf \"format=nv12,hwupload\" -c:v vp8_vaapi -b:v $bitrate"
+        else
+            video_enc_line="-c:v libvpx -b:v $bitrate"
+        fi
+        ;;
+    "webm_vp9")
+        format="webm"
+        audio_enc_line="-c:a libopus -b:a 128k -ac 2"
+        if vaapi_support "vp9"; then
+            local bitrate="300k"
+            if [ $video_longer_side -gt 1920 ]; then
+                bitrate="6M"
+            elif [ $video_longer_side -gt 1280 ]; then
+                bitrate="3M"
+            elif [ $video_longer_side -gt 768 ]; then
+                bitrate="1500k"
+            elif [ $video_longer_side -gt 352 ]; then
+                bitrate="700k"
+            fi
+            video_enc_line="-vaapi_device /dev/dri/renderD128 -vf \"format=nv12,hwupload\" -c:v vp9_vaapi -b:v $bitrate"
+        else
+            video_enc_line="-c:v libvpx-vp9 -crf 32 -b:v 0 -g $keyframe_intervall"
+        fi
+        ;;
+    "webm_av1_fast")
+        format="webm"
+        audio_enc_line="-c:a libopus -b:a 128k -ac 2"
+        video_enc_line="-c:v libsvtav1 -crf 32 -preset 8 -svtav1-params \"tune=0:enable-overlays=1:scd=1\" -g $keyframe_intervall -pix_fmt yuv420p10le"
+        ;;
+    "webm_av1_slow")
+        format="webm"
+        audio_enc_line="-c:a libopus -b:a 128k -ac 2"
+        video_enc_line="-c:v libsvtav1 -crf 32 -preset 5 -svtav1-params \"tune=0:film-grain=8:enable-overlays=1:scd=1\" -g $keyframe_intervall -pix_fmt yuv420p10le"
+        ;;
+    esac
+
+    outputfile="${inputfile_basename}_renc"
+    while [ -f "${outputfile}.$format" ]; do
+        outputfile="${outputfile}_renc"
+    done
+    outputfile="${outputfile}.$format"
+
+    if [ $audio_streams_count -eq 0 ]; then
+        audio_enc_line="-an"
+    else
+        case $audio_channel_count in
+        2)
+            ;;
+        6)
+            #audio_enc_line="$audio_enc_line -filter:a \"pan=stereo\|c0=c2+0.30*c0+0.30*c4\|c1=c2+0.30*c1+0.30*c5\""
+            audio_enc_line="$audio_enc_line -filter:a aresample=matrix_encoding=dplii"
+            ;;
+        *)
+            "${kdialog_bin}" --error "$(eval echo "${msg_convert_error_audio_channel_count}")"
+            exit 2
+        ;;
+        esac
+    fi
+
+    export dbus_ref_2=$("${kdialog_bin}" --title "${inputfile}" --progressbar "${msg_convert_init_process}" $video_frame_count)
+    qdbus $dbus_ref_2 org.kde.kdialog.ProgressDialog.showCancelButton true
+
+    pipe_path="/tmp/ffmpeg_pipe"
+
+    [ -e $pipe_path ] && rm $pipe_path
+
+    ffmpeg_command="ffmpeg -i \"$inputfile\" -y -hide_banner -loglevel error -progress - -map_metadata -1 -map_chapters -1 $video_stream_map_line $video_enc_line $audio_stream_map_line $audio_enc_line -f $format \"${outputfile}\""
+
+    mkfifo $pipe_path
+    eval "$ffmpeg_command 1>$pipe_path 2>&1 &"
+    ffmpeg_pid=$!
+
+    local rc=0
+    while read -r line; do
+        if [[ "$line" =~ ^"frame=" ]]; then
+            processed_frames=${line#*=}
+            qdbus $dbus_ref_2 setLabelText "$(eval echo "${msg_convert_processing}")"
+            qdbus $dbus_ref_2 org.freedesktop.DBus.Properties.Set org.kde.kdialog.ProgressDialog value $processed_frames;
+        elif [[ "$line" =~ ^"fps=" ]]; then
+            local process_fps=$(echo "scale=0; (${line#*=}+0.5)/1" | ${bc_bin})
+            # Calculate finish time
+            if [ $process_fps -gt 0 ]; then
+                local process_remaining_sec=$( echo "((($video_frame_count-$processed_frames) / $process_fps)+0.5)/1" | ${bc_bin} )
+                process_remaining_time=$(seconds_to_hms $process_remaining_sec)
+            fi
+            qdbus $dbus_ref_2 setLabelText "$(eval echo "${msg_convert_processing}")"
+        elif [[ "$line" =~ ^"bitrate=" ]]; then
+            current_bitrate=${line#*=}
+            qdbus $dbus_ref_2 setLabelText "$(eval echo "${msg_convert_processing}")"
+        fi
+        if [ "$(qdbus $dbus_ref_2 org.kde.kdialog.ProgressDialog.wasCancelled 2>/dev/null)" != "false" ]; then
+            kill -2 $ffmpeg_pid
+            "${kdialog_bin}" --title "${msg_title}" --passivepopup "${msg_common_abort}" 5
+            rc=2
+            break
+        fi
+    done < $pipe_path
+
+    wait $ffmpeg_pid
+    rm $pipe_path
+
+    return $rc
+
+}
+
+iterate_files () {
+
+    local file_count=$#
+
+    if [ $file_count -eq 1 ]; then
+        exec_convert "${1}"
+        return
+    fi
+
+    dbus_ref=$(kdialog --icon configure --title "${msg_title}" --progressbar "${msg_common_start}" $file_count)
+    qdbus $dbus_ref org.kde.kdialog.ProgressDialog.showCancelButton true
+    i=1
+
+    while [[ "$(qdbus $dbus_ref org.kde.kdialog.ProgressDialog.wasCancelled 2>/dev/null)" == "false" && $i -le $file_count ]]; do
+
+        local file="${!i}"
+        local basename_file="$(basename "$file")"
+
+        if [ ! -f "${file}" ]; then
+            "${kdialog_bin}" --title --icon configure "${msg_title}" --error "$(eval echo "${msg_common_file_not_found}")"
+            break
+        fi
+        qdbus $dbus_ref org.kde.kdialog.ProgressDialog.setLabelText "$(eval echo "${msg_common_progress_text}")"
+
+        case $command in
+        convert)
+            exec_convert "${file}"
+            ;;
+        esac
+
+        local rc=$?
+        if [ $rc -eq 0 ]; then
+            "${kdialog_bin}" --title "${msg_finish_title}" --passivepopup "${msg_common_finish_ok}" 5
+        elif [ $rc -ne 2 ]; then
+            qdbus $dbus_ref close
+            "${kdialog_bin}" --icon configure --title "${msg_finish_title}" --detailederror "${msg_common_finish_error}" "${OUTPUT}"
+            exit 1
+        fi
+
+        qdbus $dbus_ref org.freedesktop.DBus.Properties.Set org.kde.kdialog.ProgressDialog value $i
+
+        i=$(($i + 1))
+
+    done
+
+    qdbus $dbus_ref close 2>/dev/null
+
+}
+
+## init functions
+
+init_convert () {
+
+    local value="${1}"
+    shift
+
+    if [ "${value}" == "custom" ]; then
+        profile=$("${kdialog_bin}" --icon configure --title "${msg_title}" --combobox "${msg_convert_profile_input_text}" "MP4 / h.264 / AAC 2.0" "MP4 / h.265 / AAC 2.0" "WebM / VP8 / Vorbis 2.0" "WebM / VP9 / Opus 2.0" "WebM / AV1 / Opus 2.0 (good quality/slower)" "WebM / AV1 / Opus 2.0 (balanced quality/faster)" --default "MP4 / h.264 / AAC 2.0") || \
+            { "${kdialog_bin}" --title "${msg_title}" --passivepopup "${msg_common_abort}" 5 && exit 2; }
+        case $profile in
+        "MP4 / h.264 / AAC 2.0")
+            profile="mp4_h264"
+            ;;
+        "MP4 / h.265 / AAC 2.0")
+            profile="mp4_h265"
+            ;;
+        "WebM / VP8 / Vorbis 2.0")
+            profile="webm_vp8"
+            ;;
+        "WebM / VP9 / Opus 2.0")
+            profile="webm_vp9"
+            ;;
+        "WebM / AV1 / Opus 2.0 (good quality/slower)")
+            profile="webm_av1_slow"
+            ;;
+        "WebM / AV1 / Opus 2.0 (balanced quality/faster)")
+            profile="webm_av1_fast"
+            ;;
+        esac
+    else
+        profile="${value}"
+    fi
+
+    iterate_files "${@}"
+
+}
+
+
+## main part
+
+command="${1}"
+shift
+
+if [ -z "$command" ]; then
+    help
+    exit 0
+fi
+
+case $command in
+help | -h | --help)
+    help
+    exit 0
+    ;;
+convert)
+    msg_title="$msg_convert_title"
+    init_convert "${@}"
+    ;;
+*)
+    "${kdialog_bin}" --icon configure --title "${msg_common_dependency_check_failed_title}" --error "$(eval echo "${msg_common_command_not_found_text}")"
+    exit 2
+    ;;
+esac
+
+exit 0
