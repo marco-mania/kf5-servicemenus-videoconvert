@@ -2,7 +2,7 @@
 
 KDE service menus for video file converting to the common video formats
 MP4 or WebM. The encoding specifications are chosen for wide compatibility and
-balance between encoding speed and size.
+good tradeoff between encoding speed and size.
 
 The conversion is done using FFmpeg. If available, hardware encoding with VAAPI
 will be used.

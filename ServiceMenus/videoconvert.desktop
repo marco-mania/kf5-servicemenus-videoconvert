@@ -34,7 +34,7 @@ Exec=videoconvert-kdialog convert mp4_h264 %F
 Icon=video-mp4
 Terminal=false
 Type=Application
-Name=Convert to MP4 (h.264/AAC)
+Name=Convert to MP4 (H.264/AAC)
 Name[de]=In MP4 (h.264/AAC) umwandeln
 
 [Desktop Action convert_mp4_h265]
@@ -42,7 +42,7 @@ Exec=videoconvert-kdialog convert mp4_h265 %F
 Icon=video-mp4
 Terminal=false
 Type=Application
-Name=Convert to MP4 (h.265/AAC)
+Name=Convert to MP4 (H.265/AAC)
 Name[de]=In MP4 (h.265/AAC) umwandeln
 
 [Desktop Action convert_webm_vp8]
