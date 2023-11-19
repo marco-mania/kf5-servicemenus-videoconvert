@@ -77,7 +77,7 @@ function load_lang() {
             mgs_convert_select_audio_stream_title="Select audio stream"
             msg_convert_select_audio_stream_text="Found multiple audio streams. Please choose one:"
             msg_convert_init_process="Initializing encoding process..."
-            msg_convert_processing="Processing frame \$processed_frames / \$video_frame_count\<br\>Speed: \$process_fps fps\<br\>Current bitrate: \$current_bitrate\<br\>Remaining time: \$process_remaining_time"
+            msg_convert_processing="Processing frame \$processed_frames / \$video_frame_count\<br\>\<br\>Video codec: \$vcodec\<br\>Audio codec: \$acodec\<br\>\<br\>Speed: \$process_fps fps\<br\>Current bitrate: \$current_bitrate\<br\>Remaining time: \$process_remaining_time"
             msg_convert_finish_title="Conversion of \$basename_file"
             msg_convert_error_audio_channel_count="Unusual channel count found for main audio track: \$audio_channel_count"
 
@@ -211,6 +211,8 @@ exec_convert () {
 
     local audio_channel_count=$a_channel_count
 
+    local vcodec="H.264/AVC"
+    local acodec="AAC"
     local format="mp4"
     local audio_enc_line="-c:a aac -b:a 192k -ac 2"
     local video_enc_line=""
@@ -224,6 +226,7 @@ exec_convert () {
         fi
         ;;
     "mp4_h265")
+        local vcodec="H.265/HEVC"
         if vaapi_support "h265"; then
             video_enc_line="-vaapi_device /dev/dri/renderD128 -vf \"format=nv12,hwupload\" -c:v hevc_vaapi -qp 27"
         else
@@ -232,14 +235,16 @@ exec_convert () {
         ;;
     "webm_vp8")
         format="webm"
+        local vcodec="VP8"
+        local acodec="Vorbis"
         audio_enc_line="-c:a libvorbis -b:a 192k -ac 2"
         local bitrate="500k"
         if [ $video_longer_side -gt 1920 ]; then
             bitrate="8M"
         elif [ $video_longer_side -gt 1280 ]; then
-            bitrate="5M"
+            bitrate="6M"
         elif [ $video_longer_side -gt 768 ]; then
-            bitrate="2M"
+            bitrate="3M"
         elif [ $video_longer_side -gt 352 ]; then
             bitrate="1M"
         fi
@@ -251,11 +256,13 @@ exec_convert () {
         ;;
     "webm_vp9")
         format="webm"
+        local vcodec="VP9"
+        local acodec="Opus"
         audio_enc_line="-c:a libopus -b:a 128k -ac 2"
         if vaapi_support "vp9"; then
             local bitrate="300k"
             if [ $video_longer_side -gt 1920 ]; then
-                bitrate="6M"
+                bitrate="5M"
             elif [ $video_longer_side -gt 1280 ]; then
                 bitrate="3M"
             elif [ $video_longer_side -gt 768 ]; then
@@ -270,11 +277,15 @@ exec_convert () {
         ;;
     "webm_av1_fast")
         format="webm"
+        local vcodec="AV1"
+        local acodec="Opus"
         audio_enc_line="-c:a libopus -b:a 128k -ac 2"
         video_enc_line="-c:v libsvtav1 -crf 32 -preset 8 -svtav1-params \"tune=0:enable-overlays=1:scd=1\" -g $keyframe_intervall -pix_fmt yuv420p10le"
         ;;
     "webm_av1_slow")
         format="webm"
+        local vcodec="AV1"
+        local acodec="Opus"
         audio_enc_line="-c:a libopus -b:a 128k -ac 2"
         video_enc_line="-c:v libsvtav1 -crf 32 -preset 5 -svtav1-params \"tune=0:film-grain=8:enable-overlays=1:scd=1\" -g $keyframe_intervall -pix_fmt yuv420p10le"
         ;;
