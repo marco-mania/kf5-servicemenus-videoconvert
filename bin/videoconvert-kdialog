@@ -426,25 +426,25 @@ init_convert () {
     shift
 
     if [ "${value}" == "custom" ]; then
-        profile=$("${kdialog_bin}" --icon configure --title "${msg_title}" --combobox "${msg_convert_profile_input_text}" "MP4 / h.264 / AAC 2.0" "MP4 / h.265 / AAC 2.0" "WebM / VP8 / Vorbis 2.0" "WebM / VP9 / Opus 2.0" "WebM / AV1 / Opus 2.0 (good quality/slower)" "WebM / AV1 / Opus 2.0 (balanced quality/faster)" --default "MP4 / h.264 / AAC 2.0") || \
+        profile=$("${kdialog_bin}" --icon configure --title "${msg_title}" --radiolist "${msg_convert_profile_input_text}" 0 "MP4 / H.264 / AAC 2.0" on 1 "MP4 / H.265 / AAC 2.0" off 2 "WebM / VP8 / Vorbis 2.0" off 3 "WebM / VP9 / Opus 2.0" off 4 "WebM / AV1 / Opus 2.0 (good quality/slower)" off 5 "WebM / AV1 / Opus 2.0 (balanced quality/faster)" off) || \
             { "${kdialog_bin}" --title "${msg_title}" --passivepopup "${msg_common_abort}" 5 && exit 2; }
         case $profile in
-        "MP4 / h.264 / AAC 2.0")
+        0)
             profile="mp4_h264"
             ;;
-        "MP4 / h.265 / AAC 2.0")
+        1)
             profile="mp4_h265"
             ;;
-        "WebM / VP8 / Vorbis 2.0")
+        2)
             profile="webm_vp8"
             ;;
-        "WebM / VP9 / Opus 2.0")
+        3)
             profile="webm_vp9"
             ;;
-        "WebM / AV1 / Opus 2.0 (good quality/slower)")
+        4)
             profile="webm_av1_slow"
             ;;
-        "WebM / AV1 / Opus 2.0 (balanced quality/faster)")
+        5)
             profile="webm_av1_fast"
             ;;
         esac
