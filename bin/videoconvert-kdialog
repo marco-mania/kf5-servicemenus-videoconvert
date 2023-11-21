@@ -227,7 +227,7 @@ exec_convert () {
     local vcodec="H.264/AVC"
     local acodec="AAC"
     local format="mp4"
-    local audio_enc_line="-c:a aac -b:a 192k -ac 2"
+    local audio_enc_line="-c:a aac -b:a 160k -ac 2"
     local video_enc_line=""
 
     case "$profile" in
