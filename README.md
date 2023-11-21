@@ -17,7 +17,7 @@ will be used.
 
 Install the requirements (Arch Linux):
 
-    sudo pacman -S ffmpeg bc
+    sudo pacman -S ffmpeg qt5-tools bc
 
 For hardware encoding support on Intel CPU:
 
