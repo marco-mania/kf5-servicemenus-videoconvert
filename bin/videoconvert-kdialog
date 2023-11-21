@@ -233,7 +233,7 @@ exec_convert () {
     case "$profile" in
     "mp4_h264")
         if vaapi_support "h264"; then
-            video_enc_line="-vaapi_device /dev/dri/renderD128 -vf \"format=nv12,hwupload\" -c:v h264_vaapi -profile 100 -qp 28"
+            video_enc_line="-vaapi_device /dev/dri/renderD128 -vf \"format=nv12,hwupload\" -c:v h264_vaapi -profile 100 -qp 23"
         else
             video_enc_line="-c:v libx264 -crf 23 -preset slow -profile:v high"
         fi
