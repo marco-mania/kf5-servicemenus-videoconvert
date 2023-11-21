@@ -256,9 +256,9 @@ exec_convert () {
         format="webm"
         local vcodec="VP8"
         local acodec="Vorbis"
-        audio_enc_line="-c:a libvorbis -b:a 192k -ac 2"
+        audio_enc_line="-c:a libvorbis -b:a 128k -ac 2"
         if vaapi_support "vp8"; then
-            video_enc_line="-vaapi_device /dev/dri/renderD128 -vf \"format=nv12,hwupload\" -c:v vp8_vaapi -qp 23"
+            video_enc_line="-vaapi_device /dev/dri/renderD128 -vf \"format=nv12,hwupload\" -c:v vp8_vaapi"
         else
             video_enc_line="-c:v libvpx -crf 23 -b:v 10M"
         fi
@@ -272,16 +272,6 @@ exec_convert () {
         local acodec="Opus"
         audio_enc_line="-c:a libopus -b:a 128k -ac 2"
         if vaapi_support "vp9"; then
-            local bitrate="300k"
-            if [ $video_longer_side -gt 1920 ]; then
-                bitrate="5M"
-            elif [ $video_longer_side -gt 1280 ]; then
-                bitrate="3M"
-            elif [ $video_longer_side -gt 768 ]; then
-                bitrate="1500k"
-            elif [ $video_longer_side -gt 352 ]; then
-                bitrate="700k"
-            fi
             video_enc_line="-vaapi_device /dev/dri/renderD128 -vf \"format=nv12,hwupload\" -c:v vp9_vaapi -global_quality 50 -bf 1 -bsf:v vp9_raw_reorder,vp9_superframe"
         else
             video_enc_line="-c:v libvpx-vp9 -crf 27 -b:v 0 -g $keyframe_intervall"
