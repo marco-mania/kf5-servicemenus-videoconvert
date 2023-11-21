@@ -256,7 +256,7 @@ exec_convert () {
         format="webm"
         local vcodec="VP8"
         local acodec="Vorbis"
-        audio_enc_line="-c:a libvorbis -b:a 128k -ac 2"
+        audio_enc_line="-c:a libvorbis -b:a 160k -ac 2"
         if vaapi_support "vp8"; then
             video_enc_line="-vaapi_device /dev/dri/renderD128 -vf \"format=nv12,hwupload\" -c:v vp8_vaapi"
         else
