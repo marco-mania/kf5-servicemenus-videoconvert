@@ -258,7 +258,7 @@ exec_convert () {
         local acodec="Vorbis"
         audio_enc_line="-c:a libvorbis -b:a 160k -ac 2"
         if vaapi_support "vp8"; then
-            video_enc_line="-vaapi_device /dev/dri/renderD128 -vf \"format=nv12,hwupload\" -c:v vp8_vaapi"
+            video_enc_line="-vaapi_device /dev/dri/renderD128 -vf \"format=nv12,hwupload\" -c:v vp8_vaapi -global_quality 30"
         else
             video_enc_line="-c:v libvpx -crf 23 -b:v 10M"
         fi
