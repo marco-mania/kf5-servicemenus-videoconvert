@@ -212,12 +212,17 @@ exec_convert () {
         audio_selected_stream_index=$(eval "${kdialog_bin}" --title \"${mgs_convert_select_audio_stream_title}\" --radiolist \"${msg_convert_select_audio_stream_text}\" $kdialog_string) || \
             { "${kdialog_bin}" --title "${msg_title}" --passivepopup "${msg_common_abort}" 5 && exit 2; }
         audio_stream_map_line="-map 0:a:$audio_selected_stream_index"
+
     else
+
         audio_selected_stream_index=1
+        local a_codec="$(echo $audio_streams_info | cut -d',' -f2)"
         local a_channel_count=$(echo $audio_streams_info | cut -d',' -f3)
+
     fi
 
     local audio_channel_count=$a_channel_count
+    local audio_channel_codec=$a_codec
 
     local vcodec="H.264/AVC"
     local acodec="AAC"
@@ -228,9 +233,12 @@ exec_convert () {
     case "$profile" in
     "mp4_h264")
         if vaapi_support "h264"; then
-            video_enc_line="-vaapi_device /dev/dri/renderD128 -vf \"format=nv12,hwupload\" -c:v h264_vaapi -profile 100 -qp 23"
+            video_enc_line="-vaapi_device /dev/dri/renderD128 -vf \"format=nv12,hwupload\" -c:v h264_vaapi -profile 100 -qp 28"
         else
             video_enc_line="-c:v libx264 -crf 23 -preset slow -profile:v high"
+        fi
+        if [ $audio_channel_count -eq 2 ] && [ "$audio_channel_codec" == "aac" ]; then
+            audio_enc_line="-c:a copy"
         fi
         ;;
     "mp4_h265")
@@ -239,6 +247,9 @@ exec_convert () {
             video_enc_line="-vaapi_device /dev/dri/renderD128 -vf \"format=nv12,hwupload\" -c:v hevc_vaapi -qp 27"
         else
             video_enc_line="-c:v libx265 -crf 27 -preset slow"
+        fi
+        if [ $audio_channel_count -eq 2 ] && [ "$audio_channel_codec" == "aac" ]; then
+            audio_enc_line="-c:a copy"
         fi
         ;;
     "webm_vp8")
@@ -261,6 +272,9 @@ exec_convert () {
         else
             video_enc_line="-c:v libvpx -b:v $bitrate"
         fi
+        if [ $audio_channel_count -eq 2 ] && [ "$audio_channel_codec" == "vorbis" ]; then
+            audio_enc_line="-c:a copy"
+        fi
         ;;
     "webm_vp9")
         format="webm"
@@ -282,6 +296,9 @@ exec_convert () {
         else
             video_enc_line="-c:v libvpx-vp9 -crf 32 -b:v 0 -g $keyframe_intervall"
         fi
+        if [ $audio_channel_count -eq 2 ] && [ "$audio_channel_codec" == "opus" ]; then
+            audio_enc_line="-c:a copy"
+        fi
         ;;
     "webm_av1_fast")
         format="webm"
@@ -289,6 +306,9 @@ exec_convert () {
         local acodec="Opus"
         audio_enc_line="-c:a libopus -b:a 128k -ac 2"
         video_enc_line="-c:v libsvtav1 -crf 32 -preset 8 -svtav1-params \"tune=0:enable-overlays=1:scd=1:keyint=5s\" -pix_fmt yuv420p10le"
+        if [ $audio_channel_count -eq 2 ] && [ "$audio_channel_codec" == "opus" ]; then
+            audio_enc_line="-c:a copy"
+        fi
         ;;
     "webm_av1_slow")
         format="webm"
@@ -296,6 +316,9 @@ exec_convert () {
         local acodec="Opus"
         audio_enc_line="-c:a libopus -b:a 128k -ac 2"
         video_enc_line="-c:v libsvtav1 -crf 32 -preset 4 -svtav1-params \"tune=0:film-grain=8:enable-overlays=1:scd=1:keyint=5s\" -pix_fmt yuv420p10le"
+        if [ $audio_channel_count -eq 2 ] && [ "$audio_channel_codec" == "opus" ]; then
+            audio_enc_line="-c:a copy"
+        fi
         ;;
     esac
 
