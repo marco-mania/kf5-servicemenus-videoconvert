@@ -257,20 +257,10 @@ exec_convert () {
         local vcodec="VP8"
         local acodec="Vorbis"
         audio_enc_line="-c:a libvorbis -b:a 192k -ac 2"
-        local bitrate="500k"
-        if [ $video_longer_side -gt 1920 ]; then
-            bitrate="8M"
-        elif [ $video_longer_side -gt 1280 ]; then
-            bitrate="6M"
-        elif [ $video_longer_side -gt 768 ]; then
-            bitrate="3M"
-        elif [ $video_longer_side -gt 352 ]; then
-            bitrate="1M"
-        fi
         if vaapi_support "vp8"; then
-            video_enc_line="-vaapi_device /dev/dri/renderD128 -vf \"format=nv12,hwupload\" -c:v vp8_vaapi -b:v $bitrate"
+            video_enc_line="-vaapi_device /dev/dri/renderD128 -vf \"format=nv12,hwupload\" -c:v vp8_vaapi -qp 23"
         else
-            video_enc_line="-c:v libvpx -b:v $bitrate"
+            video_enc_line="-c:v libvpx -crf 23 -b:v 10M"
         fi
         if [ $audio_channel_count -eq 2 ] && [ "$audio_channel_codec" == "vorbis" ]; then
             audio_enc_line="-c:a copy"
@@ -292,9 +282,9 @@ exec_convert () {
             elif [ $video_longer_side -gt 352 ]; then
                 bitrate="700k"
             fi
-            video_enc_line="-vaapi_device /dev/dri/renderD128 -vf \"format=nv12,hwupload\" -c:v vp9_vaapi -b:v $bitrate"
+            video_enc_line="-vaapi_device /dev/dri/renderD128 -vf \"format=nv12,hwupload\" -c:v vp9_vaapi -global_quality 50 -bf 1 -bsf:v vp9_raw_reorder,vp9_superframe"
         else
-            video_enc_line="-c:v libvpx-vp9 -crf 32 -b:v 0 -g $keyframe_intervall"
+            video_enc_line="-c:v libvpx-vp9 -crf 27 -b:v 0 -g $keyframe_intervall"
         fi
         if [ $audio_channel_count -eq 2 ] && [ "$audio_channel_codec" == "opus" ]; then
             audio_enc_line="-c:a copy"
